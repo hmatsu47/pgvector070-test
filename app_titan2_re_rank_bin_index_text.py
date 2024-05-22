@@ -1,8 +1,10 @@
+import boto3
+from dotenv import load_dotenv
 import json
+import numpy as np
 import psycopg
 from psycopg.rows import dict_row
-from psycopg import extras
-from dotenv import load_dotenv
+from pgvector.psycopg import register_vector
 import os
 
 # .env ファイルを読み込み
@@ -24,26 +26,63 @@ DB_CONFIG = {
 # JSON ファイルのパス
 JSON_FILE_PATH = './databricks-dolly-15k-ja-zundamon.json'
 
-def create_table(conn):
-    with conn.cursor() as cur:
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS your_table_name (
-                id INTEGER PRIMARY KEY,
-                data TEXT
-            )
-        ''')
-        conn.commit()
+# ベクトル長
+VECTOR_SIZE = 1024
 
-def insert_data(conn, data_list):
-    insert_query = 'INSERT INTO your_table_name (id, data) VALUES %s'
-    extras.execute_values(conn.cursor(), insert_query, data_list)
+# テーブル作成
+def create_table(conn):
+    conn.execute('CREATE TABLE IF NOT EXISTS rerank_test (id INTEGER PRIMARY KEY, data TEXT, embedding vector(%d))', VECTOR_SIZE)
+    conn.commit()
+
+# データ行挿入
+def insert_data(conn, index, data, embedding):
+    conn.execute('INSERT INTO your_table_name (id, data, embedding) VALUES (%s, %s, %s)', (index, data, embedding,))
+
+# 埋め込みベクトルを生成
+def generate_embeddings(input_text, dimensions, normalize, client=None):
+    """
+    Invoke Amazon Titan Text Embeddings G1 and print the response.
+
+    :param input_text: The text to convert to an embedding.
+    :param dimensions: The number of dimensions the output embeddings should have.
+    :param normalize:  flag indicating whether or not to normalize the output embeddings.
+    :param client:     An optional Bedrock Runtime client instance.
+                       Defaults to None if not provided.
+    :return: The model's response object.
+    """
+
+    # Create a Bedrock Runtime client if not provided.
+    client = client or boto3.client("bedrock-runtime", region_name="us-west-2")
+
+    # Set the model ID, e.g., Titan Text Embeddings V2.
+    model_id = "amazon.titan-embed-text-v2:0"
+
+    # Create the request for the model.
+    request = {"inputText": input_text, "dimensions": dimensions, "normalize": normalize}
+
+    # Encode and send the request.
+    response = client.invoke_model(
+        body=json.dumps(request),
+        modelId=model_id,
+    )
+
+    # Decode the response
+    model_response = json.loads(response["body"].read())
+
+    # Extract the generated embedding.
+    embedding = model_response["embedding"]
+
+    return embedding
 
 def main():
     try:
-        # PostgreSQL に接続（Titan の呼び出しと Embedding には未対応）
+        # PostgreSQL に接続
         with psycopg.connect(**DB_CONFIG, row_factory=dict_row) as conn:
             # 自動コミットを無効にしてトランザクションを管理
             conn.autocommit = False
+
+            # コネクション（conn）に vector 型を登録
+            register_vector(conn)
             
             # テーブル作成
             create_table(conn)
@@ -52,14 +91,13 @@ def main():
             with open(JSON_FILE_PATH, 'r', encoding='utf-8') as file:
                 json_data = json.load(file)
 
-                # データリストの作成
-                data_list = [
-                    (int(item['index']), item['input']) 
-                    for item in json_data if item['input']
-                ]
-
-                # データをバッチ挿入
-                insert_data(conn, data_list)
+            # JSON から必要項目を抽出しテーブルに挿入
+            for item in json_data:
+                index = int(item['index'])
+                data = item['input']
+                if data:  # input が空文字でない場合のみ埋め込みベクトルを取得してテーブルに行挿入
+                    embedding = generate_embeddings(data, VECTOR_SIZE, True)
+                    insert_data(conn, index, data, np.array(embedding))
             
             # 全行挿入後にコミット
             conn.commit()
