@@ -7,79 +7,77 @@ from psycopg.rows import dict_row
 from pgvector.psycopg import register_vector
 import os
 
-# .env ファイルを読み込み
-load_dotenv()
-
-# データベース接続情報を環境変数から取得
-DB_CONFIG = {
-    'dbname': os.getenv('DB_NAME'),
-    'user': os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'host': os.getenv('DB_HOST'),
-    'port': os.getenv('DB_PORT'),
-    'sslmode': os.getenv('SSL_MODE'),
-    'sslcert': os.getenv('SSL_CERT'),
-    'sslkey': os.getenv('SSL_KEY'),
-    'sslrootcert': os.getenv('SSL_ROOT_CERT')
-}
-
 # JSON ファイルのパス
 JSON_FILE_PATH = './databricks-dolly-15k-ja-zundamon.json'
+# JSON_FILE_PATH = './test_data.json'
 
 # ベクトル長
 VECTOR_SIZE = 1024
 
+# データベース接続情報を環境変数から取得
+def get_conn_config():
+    return {
+    'dbname': os.getenv('DB_NAME'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'host': os.getenv('DB_HOST'),
+    'port': os.getenv('DB_PORT')
+    }
+
+# pgvector 有効化
+def enable_vector(conn):
+    conn.execute('CREATE EXTENSION IF NOT EXISTS vector')
+
 # テーブル作成
 def create_table(conn):
-    conn.execute('CREATE TABLE IF NOT EXISTS rerank_test (id INTEGER PRIMARY KEY, data TEXT, embedding vector(%d))', VECTOR_SIZE)
+    conn.execute('CREATE TABLE IF NOT EXISTS rerank_test (id INTEGER PRIMARY KEY, data TEXT, embedding vector(%d))' % VECTOR_SIZE)
     conn.commit()
 
 # データ行挿入
 def insert_data(conn, index, data, embedding):
-    conn.execute('INSERT INTO your_table_name (id, data, embedding) VALUES (%s, %s, %s)', (index, data, embedding,))
+    conn.execute('INSERT INTO rerank_test (id, data, embedding) VALUES (%s, %s, %s)', (index, data, embedding))
+    conn.commit()
 
 # 埋め込みベクトルを生成
-def generate_embeddings(input_text, dimensions, normalize, client=None):
-    """
-    Invoke Amazon Titan Text Embeddings G1 and print the response.
+def generate_embeddings(input_text, dimensions, normalize):
 
-    :param input_text: The text to convert to an embedding.
-    :param dimensions: The number of dimensions the output embeddings should have.
-    :param normalize:  flag indicating whether or not to normalize the output embeddings.
-    :param client:     An optional Bedrock Runtime client instance.
-                       Defaults to None if not provided.
-    :return: The model's response object.
-    """
+    # Bedrock client 生成
+    client = boto3.client("bedrock-runtime", region_name="us-west-2")
 
-    # Create a Bedrock Runtime client if not provided.
-    client = client or boto3.client("bedrock-runtime", region_name="us-west-2")
-
-    # Set the model ID, e.g., Titan Text Embeddings V2.
+    # モデル ID 指定（Titan Text Embeddings V2）
     model_id = "amazon.titan-embed-text-v2:0"
 
-    # Create the request for the model.
+    # リクエストを生成
     request = {"inputText": input_text, "dimensions": dimensions, "normalize": normalize}
 
-    # Encode and send the request.
+    # リクエストをエンコードして送信
     response = client.invoke_model(
         body=json.dumps(request),
         modelId=model_id,
     )
 
-    # Decode the response
+    # レスポンスをデコード
     model_response = json.loads(response["body"].read())
 
-    # Extract the generated embedding.
+    # embedding を取り出して返却
     embedding = model_response["embedding"]
 
     return embedding
 
 def main():
+    # .env ファイルを読み込み
+    load_dotenv(verbose=True)
+
+    # データベース接続情報を取得
+    DB_CONFIG = get_conn_config()
+
+    conn = None
     try:
         # PostgreSQL に接続
         with psycopg.connect(**DB_CONFIG, row_factory=dict_row) as conn:
-            # 自動コミットを無効にしてトランザクションを管理
-            conn.autocommit = False
+
+            # pgvector 有効化
+            enable_vector(conn)
 
             # コネクション（conn）に vector 型を登録
             register_vector(conn)
@@ -95,16 +93,31 @@ def main():
             for item in json_data:
                 index = int(item['index'])
                 data = item['input']
-                if data:  # input が空文字でない場合のみ埋め込みベクトルを取得してテーブルに行挿入
-                    embedding = generate_embeddings(data, VECTOR_SIZE, True)
-                    insert_data(conn, index, data, np.array(embedding))
-            
-            # 全行挿入後にコミット
-            conn.commit()
+                question = item['instruction']
+                if data:  # input が空文字でない場合のみ埋め込みベクトルを取得
+                    embedding = None
+                    try:
+                        embedding = generate_embeddings(data, VECTOR_SIZE, True)
+                    except Exception as e:
+                        # 埋め込みベクトル取得でエラーが発生した場合は無視
+                        embedding = None
+                    if embedding:   # 埋め込みベクトルが正しく返った場合のみテーブルに行挿入
+                        insert_data(conn, index, data, np.array(embedding))
+                        # 行挿入できた場合は質問文も登録
+                        enbedding = None
+                        try:
+                            embedding = generate_embeddings(question, VECTOR_SIZE, True)
+                        except Exception as e:
+                            # 埋め込みベクトル取得でエラーが発生した場合は無視
+                            embedding = None
+                        if embedding:   # 埋め込みベクトルが正しく返った場合のみテーブルに行挿入
+                            insert_data(conn, index + 100000, question, np.array(embedding))
+                        print(f"index: {index}")
     
     except Exception as e:
         # エラーが発生した場合はロールバック
-        conn.rollback()
+        if conn:
+            conn.rollback()
         print(f"Error: {e}")
 
 if __name__ == '__main__':
