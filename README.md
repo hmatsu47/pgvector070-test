@@ -4,7 +4,7 @@ pgvector 0.7.0 のテスト
 
 ## テストの内容
 
-- Cohere Embeds Multiligal 3.0 のバイナリベクトルを文字列形式に加工するテスト
+- Cohere Embeds Multilingual 3.0 のバイナリベクトルを文字列形式に加工するテスト
 - Titan Text Embeddings V2 の通常精度のベクトルをバイナリ量子化して DB に入れるテスト
 
 ---
