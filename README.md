@@ -8,7 +8,7 @@ pgvector 0.7.0 のテスト
   - [`app_cohere_embed_bin_vector_test.py`](app_cohere_embed_bin_vector_test.py)
 - Titan Text Embeddings V2 の通常精度のベクトルをバイナリ量子化して DB に入れるテスト
   - [`app_titan2_re_rank_bin_index_text.py`](app_titan2_re_rank_bin_index_text.py)
-  - Zenn の「[pgvector 0.7.0 でバイナリインデックス＆量子化を試してみた](https://zenn.dev/hmatsu47/articles/pgvector070-binaryvector)」を参照。
+  - Zenn の「[pgvector 0.7.0 でバイナリインデックス＆量子化を試してみた](https://zenn.dev/hmatsu47/articles/pgvector070-binaryvector)」を参照
 
 ---
 
