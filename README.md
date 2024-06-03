@@ -4,7 +4,7 @@ pgvector 0.7.0 のテスト
 
 ## テストの内容
 
-- Cohere Embeds Multilingual 3.0 のバイナリベクトルを文字列形式に加工するテスト
+- Cohere Embeds Multilingual 3.0 のバイナリベクトルを pgvector 0.7.0 で使えるよう文字列形式に加工するテスト
 
   - [`app_cohere_embed_bin_vector_test.py`](app_cohere_embed_bin_vector_test.py)
     - 現時点で pgvector にベクトルを保存する処理は未実装
