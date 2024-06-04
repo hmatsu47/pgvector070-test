@@ -1,6 +1,6 @@
 # pgvector070-test
 
-pgvector 0.7.0 のテスト
+pgvector 0.7.0 および関連テスト
 
 ## テストの内容
 
