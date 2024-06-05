@@ -17,6 +17,12 @@ pgvector 0.7.0 および関連テスト
   - [`app_titan2_re_rank_bin_index_text.py`](app_titan2_re_rank_bin_index_text.py)
     - Zenn の「[pgvector 0.7.0 でバイナリインデックス＆量子化を試してみた](https://zenn.dev/hmatsu47/articles/pgvector070-binaryvector)」を参照
 
+- `pip`
+
+```
+pip install -r requirements.txt
+```
+
 - `.env`ファイルの内容はこちら。
 
 ```
